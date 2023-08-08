@@ -1,6 +1,6 @@
+
 import tkinter as tk
-from tkinter import filedialog, messagebox, font
-import os
+from tkinter import font, filedialog, messagebox, simpledialog
 
 class SimpleTextEditor:
     def __init__(self):
@@ -8,43 +8,35 @@ class SimpleTextEditor:
         self.root.title("pyTextEditor32")
         self.root.geometry("600x450")
 
+        self.scrollbar = tk.Scrollbar(self.root)
+        self.scrollbar.pack(side='right', fill='y')
+
         self.frame = tk.Frame(self.root)
         self.frame.pack(fill='both', expand=True)
 
-        self.line_numbers = tk.Text(self.frame, width=3, padx=3, takefocus=0, border=0, background='lightgray', state='disabled', wrap='none')
+        self.line_numbers = tk.Text(self.frame, width=3, padx=3, takefocus=0, border=0, background='lightgray', state='disabled', wrap='none', yscrollcommand=self.scrollbar.set)
         self.line_numbers.pack(side='left', fill='y')
 
-        # Check if the desired font is available
-        available_fonts = font.families()
-        self.font_family = "OpenSans" if "OpenSans" in available_fonts else "Helvetica"
+        self.font_family = self.get_font_family()
         self.base_font_size = 14
         self.text_font = font.Font(family=self.font_family, size=self.base_font_size)
 
-        self.text_widget = tk.Text(self.frame, wrap='none', undo=True, font=self.text_font)
+        self.text_widget = tk.Text(self.frame, wrap='none', undo=True, font=self.text_font, yscrollcommand=self.scrollbar.set)
         self.text_widget.pack(side='right', fill='both', expand=True)
+        self.scrollbar.config(command=self.yview)
 
         self.create_menu()
 
         self.file_name = None
 
-        self.root.bind('<Configure>', self.update_line_numbers)
-        self.text_widget.bind('<<Change>>', self.update_line_numbers)
-        self.text_widget.bind('<Configure>', self.update_line_numbers)
-        self.text_widget.bind('<Control-equal>', self.zoom_in)
-        self.text_widget.bind('<Control-minus>', self.zoom_out)
-        self.text_widget.bind('<Control-MouseWheel>', self.zoom_mousewheel)
-        self.text_widget.bind('<Control-f>', self.find_text)
-        self.text_widget.bind('<Control-a>', self.select_all)
-        self.text_widget.bind('<Control-c>', self.copy_text)
-        self.text_widget.bind('<Control-v>', self.paste_text)
-        self.text_widget.bind('<Control-z>', self.undo_text)
-        self.text_widget.bind('<Control-y>', self.redo_text)
-        self.text_widget.bind('<Alt-z>', self.toggle_wrap)
-
-        self.root.protocol("WM_DELETE_WINDOW", self.handle_window_close)
+        self.bind_events()
 
         self.dark_mode = False
         self.word_wrap = False
+
+    def get_font_family(self):
+        available_fonts = font.families()
+        return next((f for f in ["OpenSans", "Helvetica", "Courier", "NotoSans"] if f in available_fonts), "Helvetica")
 
     def create_menu(self):
         menu_bar = tk.Menu(self.root)
@@ -73,13 +65,25 @@ class SimpleTextEditor:
         view_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="View", menu=view_menu)
         view_menu.add_command(label="Toggle Dark Mode", command=self.toggle_dark_mode)
+        view_menu.add_command(label="Increase Font Size", command=self.zoom_in)
+        view_menu.add_command(label="Decrease Font Size", command=self.zoom_out)
+        view_menu.add_command(label="Toggle Wrap", command=self.toggle_wrap)
 
         help_menu = tk.Menu(menu_bar, tearoff=0)
         menu_bar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="About", command=self.show_about_info)
 
-    def start(self):
-        self.root.mainloop()
+    def bind_events(self):
+        self.root.bind('<Configure>', self.update_line_numbers)
+        self.text_widget.bind('<<Change>>', self.update_line_numbers)
+        self.text_widget.bind('<Configure>', self.update_line_numbers)
+        self.text_widget.bind('<Control-equal>', self.zoom_in)
+        self.text_widget.bind('<Control-minus>', self.zoom_out)
+        self.text_widget.bind('<Control-MouseWheel>', self.zoom_mousewheel)
+        self.text_widget.bind('<Control-f>', self.find_text)
+        self.text_widget.bind('<Control-a>', self.select_all)
+        self.text_widget.bind('<Alt-z>', self.toggle_wrap)
+        self.root.protocol("WM_DELETE_WINDOW", self.handle_window_close)
 
     def toggle_dark_mode(self):
         self.dark_mode = not self.dark_mode
@@ -101,9 +105,10 @@ class SimpleTextEditor:
             self.zoom_out()
 
     def adjust_font_size(self, delta):
-        new_size = self.base_font_size + delta
-        new_size = max(min(new_size, 72), 1)  # Limit the font size between 1 and 72
-        self.text_font.configure(size=new_size)
+        self.base_font_size += delta
+        self.base_font_size = max(min(self.base_font_size, 72), 1)  # Limit the font size between 1 and 72
+        self.text_font.configure(size=self.base_font_size)
+        self.text_widget.config(font=self.text_font)
 
     def find_text(self, event=None):
         find_string = simpledialog.askstring("Find...", "Enter text to find")
@@ -134,6 +139,10 @@ class SimpleTextEditor:
         self.line_numbers.insert('1.0', line_numbers_string)
         self.line_numbers.config(state='disabled')
 
+    def yview(self, *args):
+        self.text_widget.yview(*args)
+        self.line_numbers.yview(*args)
+
     def handle_window_close(self):
         if messagebox.askokcancel("Quit", "Do you want to quit? All unsaved work will be lost."):
             self.root.destroy()
@@ -146,57 +155,68 @@ class SimpleTextEditor:
         file_name = filedialog.askopenfilename(defaultextension=".txt", filetypes=[("All Files", "*.*"), ("Text Documents", "*.txt")])
         if file_name:
             self.file_name = file_name
-            self.load_file_content()
+
+            self.load_file()
+
+    def load_file(self):
+        with open(self.file_name, "r") as file:
+            file_contents = file.read()
+            self.text_widget.delete(1.0, tk.END)
+            self.text_widget.insert(tk.END, file_contents)
 
     def save_file(self):
-        if not self.file_name:
+        if self.file_name is None:
             self.save_file_as()
         else:
-            self.write_file_content()
+            try:
+                file_contents = self.text_widget.get(1.0, tk.END)
+                with open(self.file_name, "w") as file:
+                    file.write(file_contents)
+            except Exception as e:
+                messagebox.showerror("Error saving file", str(e))
 
     def save_file_as(self):
-        file_name = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("All Files", "*.*"), ("Text Documents", "*.txt")])
-        if file_name:
-            self.file_name = file_name
-            self.write_file_content()
-
-    def load_file_content(self):
         try:
-            with open(self.file_name, "r") as file:
-                self.text_widget.delete(1.0, tk.END)
-                self.text_widget.insert(1.0, file.read())
+            new_file_name = filedialog.asksaveasfilename(initialfile="Untitled.txt", defaultextension=".txt", filetypes=[("All Files", "*.*"), ("Text Documents", "*.txt")])
+            if new_file_name:
+                self.file_name = new_file_name
+                self.save_file()
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror("Error saving file", str(e))
 
-    def write_file_content(self):
+    def undo_text(self, event=None):
         try:
-            with open(self.file_name, "w") as file:
-                file.write(self.text_widget.get(1.0, tk.END))
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+            self.text_widget.edit_undo()
+        except tk.TclError:
+            pass
 
-    def redo_text(self):
-        self.text_widget.edit_redo()
+    def redo_text(self, event=None):
+        try:
+            self.text_widget.edit_redo()
+        except tk.TclError:
+            pass
 
-    def undo_text(self):
-        self.text_widget.edit_undo()
+    def cut_text(self, event=None):
+        self.copy_text()
+        self.text_widget.delete("sel.first", "sel.last")
 
-    def cut_text(self):
-        self.text_widget.event_generate("<<Cut>>")
+    def copy_text(self, event=None):
+        self.text_widget.clipboard_clear()
+        text = self.text_widget.get("sel.first", "sel.last")
+        self.text_widget.clipboard_append(text)
 
-    def copy_text(self):
-        self.text_widget.event_generate("<<Copy>>")
+    def paste_text(self, event=None):
+        self.text_widget.insert(tk.INSERT, self.text_widget.clipboard_get())
 
-    def paste_text(self):
-        self.text_widget.event_generate("<<Paste>>")
-
-    def select_all(self):
-        self.text_widget.tag_add('sel', '1.0', 'end')
+    def select_all(self, event=None):
+        self.text_widget.tag_add("sel", "1.0", tk.END)
 
     def show_about_info(self):
-        messagebox.showinfo("About", "A simple text editor made with Python and Tkinter.")
+        messagebox.showinfo("About", "A simple text editor built with Python and Tkinter.")
+
+    def run(self):
+        self.root.mainloop()
 
 if __name__ == "__main__":
     editor = SimpleTextEditor()
-    editor.start()
-
+    editor.run()
